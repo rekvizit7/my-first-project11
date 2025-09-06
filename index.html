@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8">
+  <title>Сапер (мобільна версія)</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      background: #f0f0f0;
+      margin: 0;
+      padding: 10px;
+    }
+    h1 {
+      margin: 10px 0;
+      font-size: 1.5em;
+    }
+    #board {
+      display: grid;
+      grid-template-columns: repeat(10, 1fr);
+      gap: 2px;
+      max-width: 95vmin; /* адаптація під мобільний */
+      margin: 10px auto;
+    }
+    .cell {
+      aspect-ratio: 1 / 1; /* клітинки завжди квадратні */
+      background-color: #ccc;
+      border: 1px solid #999;
+      font-size: calc(8px + 1.2vw); /* динамічний розмір */
+      text-align: center;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      user-select: none;
+    }
+    .cell.revealed {
+      background-color: #eee;
+      cursor: default;
+    }
+    .cell.bomb {
+      background-color: red;
+      color: white;
+    }
+    .cell.flag {
+      background-color: orange;
+    }
+    #status {
+      margin: 10px;
+      font-weight: bold;
+      font-size: 1.1em;
+    }
+    button {
+      padding: 10px 20px;
+      font-size: 1em;
+      border: none;
+      border-radius: 8px;
+      background: #4CAF50;
+      color: white;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #45a049;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Сапер</h1>
+  <div id="status">Клікніть на клітинку, щоб почати!</div>
+  <div id="board"></div>
+  <button onclick="initGame()">Перезапустити</button>
+
+  <script>
+    const boardSize = 10;
+    const bombCount = 15;
+    let board = [];
+    let revealed = 0;
+    let gameOver = false;
+    let touchTimer = null;
+
+    function initGame() {
+      const boardElement = document.getElementById('board');
+      const status = document.getElementById('status');
+      boardElement.innerHTML = '';
+      board = [];
+      revealed = 0;
+      gameOver = false;
+      status.textContent = "Гра розпочалась!";
+
+      // Створюємо пусту дошку
+      for (let y = 0; y < boardSize; y++) {
+        board[y] = [];
+        for (let x = 0; x < boardSize; x++) {
+          board[y][x] = {
+            bomb: false,
+            revealed: false,
+            flag: false,
+            count: 0
+          };
+        }
+      }
+
+      // Встановлюємо бомби
+      let placed = 0;
+      while (placed < bombCount) {
+        const x = Math.floor(Math.random() * boardSize);
+        const y = Math.floor(Math.random() * boardSize);
+        if (!board[y][x].bomb) {
+          board[y][x].bomb = true;
+          placed++;
+        }
+      }
+
+      // Розраховуємо числа сусідів
+      for (let y = 0; y < boardSize; y++) {
+        for (let x = 0; x < boardSize; x++) {
+          if (!board[y][x].bomb) {
+            board[y][x].count = countNeighbors(x, y);
+          }
+        }
+      }
+
+      // Створюємо HTML
+      for (let y = 0; y < boardSize; y++) {
+        for (let x = 0; x < boardSize; x++) {
+          const cell = document.createElement('div');
+          cell.classList.add('cell');
+          cell.dataset.x = x;
+          cell.dataset.y = y;
+
+          // Лівий клік (звичайний тап)
+          cell.addEventListener("click", () => revealCell(x, y));
+
+          // Довгий тап = прапорець
+          cell.addEventListener("touchstart", (e) => {
+            touchTimer = setTimeout(() => {
+              toggleFlag(x, y);
+            }, 500); // 0.5 секунди для прапорця
+          });
+          cell.addEventListener("touchend", (e) => {
+            if (touchTimer) {
+              clearTimeout(touchTimer);
+              touchTimer = null;
+            }
+          });
+
+          boardElement.appendChild(cell);
+        }
+      }
+    }
+
+    function countNeighbors(x, y) {
+      let count = 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = x + dx, ny = y + dy;
+          if (nx >= 0 && nx < boardSize && ny >= 0 && ny < boardSize && board[ny][nx].bomb) {
+            count++;
+          }
+        }
+      }
+      return count;
+    }
+
+    function revealCell(x, y) {
+      if (gameOver || board[y][x].revealed || board[y][x].flag) return;
+      const cell = board[y][x];
+      cell.revealed = true;
+      const cellDiv = getCellDiv(x, y);
+      cellDiv.classList.add('revealed');
+
+      if (cell.bomb) {
+        cellDiv.classList.add('bomb');
+        cellDiv.textContent = '💣';
+        endGame(false);
+        return;
+      }
+
+      revealed++;
+      if (cell.count > 0) {
+        cellDiv.textContent = cell.count;
+      } else {
+        // Розкриваємо сусідів
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            const nx = x + dx, ny = y + dy;
+            if (nx >= 0 && nx < boardSize && ny >= 0 && ny < boardSize) {
+              revealCell(nx, ny);
+            }
+          }
+        }
+      }
+
+      if (revealed === boardSize * boardSize - bombCount) {
+        endGame(true);
+      }
+    }
+
+    function toggleFlag(x, y) {
+      if (gameOver || board[y][x].revealed) return;
+      const cell = board[y][x];
+      const cellDiv = getCellDiv(x, y);
+      cell.flag = !cell.flag;
+      cellDiv.classList.toggle('flag');
+      cellDiv.textContent = cell.flag ? '🚩' : '';
+    }
+
+    function getCellDiv(x, y) {
+      return document.querySelector(`.cell[data-x="${x}"][data-y="${y}"]`);
+    }
+
+    function endGame(win) {
+      gameOver = true;
+      const status = document.getElementById('status');
+      if (win) {
+        status.textContent = "Вітаємо! Ви виграли!";
+      } else {
+        status.textContent = "Гру закінчено. Ви натрапили на бомбу.";
+        // Показати всі бомби
+        for (let y = 0; y < boardSize; y++) {
+          for (let x = 0; x < boardSize; x++) {
+            if (board[y][x].bomb) {
+              const cellDiv = getCellDiv(x, y);
+              cellDiv.classList.add('bomb');
+              cellDiv.textContent = '💣';
+            }
+          }
+        }
+      }
+    }
+
+    window.onload = initGame;
+  </script>
+</body>
+</html>
